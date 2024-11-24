@@ -169,7 +169,7 @@ class KFAC:
         self.beta = beta
         self.hooks = []
 
-    def _forward_hook(self, module, args, output):
+    def _forward_hook(self, module, args):
         r"""
         Hook for computing the activations.
         """
