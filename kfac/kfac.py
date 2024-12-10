@@ -15,10 +15,30 @@ class KFACState:
     A: torch.Tensor = None
     S: torch.Tensor = None
 
+
 @dataclass
 class CenterState:
     weight: torch.Tensor = None
     bias: Optional[torch.Tensor] = None
+
+
+class KfacTensor(object):
+    r"""
+    Container for Kronecker-factored curvature matrix.
+    See https://pytorch.org/docs/stable/notes/extending.html#subclassing-torch-tensor
+    """
+    def __init__(self, A: torch.Tensor, S: torch.Tensor):
+        self.A = torch.as_tensor(A)
+        self.S = torch.as_tensor(S)
+
+    def __repr__(self):
+        return f"A:\n{self.A}\n\nS:\n{self.S}"
+
+    @classmethod
+    def __torch_function__(cls, func, types, args=(), kwargs=None):
+        A = func(args[0].A, *args[1:], **kwargs)
+        S = func(args[0].S, *args[1:], **kwargs)
+        return KfacTensor(A, S)
 
 
 def get_center_dict(modules: List[nn.Module]) -> Mapping[nn.Module, CenterState]:
@@ -472,3 +492,32 @@ def compute_trace(module: nn.Module, a: torch.Tensor, g: torch.Tensor) -> torch.
     else:
         raise NotImplementedError(f'{type(module)}')
     return trace
+
+
+if __name__ == "__main__":
+    import torchvision
+    import tqdm.auto as tqdm
+
+    # model = torchvision.models.resnet18()
+    model = nn.Sequential(
+        nn.Conv2d(3, 64, 7),
+        nn.ReLU(),
+        nn.MaxPool2d(2),
+        nn.Conv2d(64, 128, 3),
+        nn.ReLU(),
+        nn.AdaptiveAvgPool2d(1),
+        nn.Flatten(),
+        nn.Linear(128, 1000)
+    )
+    criterion = nn.CrossEntropyLoss()
+
+    layers = [mod for mod in model.modules() if type(mod) in (nn.Linear, nn.Conv2d, nn.BatchNorm2d)]
+
+    with KFAC(layers) as kfac:
+        for _ in tqdm.trange(100):
+            input = torch.randn(64, 3, 224, 224)
+            target = torch.randint(0, 1000, (64,))
+            output = model(input)
+            loss = criterion(output, target)
+            model.zero_grad()
+            loss.backward()
